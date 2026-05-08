@@ -1,12 +1,9 @@
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Blocker
 from app.schemas import BlockerCreate, BlockerRead, BlockerUpdate
+from app.services import blockers as svc
 
 router = APIRouter(prefix="/blockers", tags=["blockers"])
 
@@ -17,26 +14,17 @@ def list_blockers(
     status_filter: str | None = None,
     db: Session = Depends(get_db),
 ):
-    stmt = select(Blocker)
-    if project_id is not None:
-        stmt = stmt.where(Blocker.project_id == project_id)
-    if status_filter is not None:
-        stmt = stmt.where(Blocker.status == status_filter)
-    return db.scalars(stmt).all()
+    return svc.list_blockers(db, project_id=project_id, status_filter=status_filter)
 
 
 @router.post("", response_model=BlockerRead, status_code=status.HTTP_201_CREATED)
 def create_blocker(payload: BlockerCreate, db: Session = Depends(get_db)):
-    blocker = Blocker(**payload.model_dump())
-    db.add(blocker)
-    db.commit()
-    db.refresh(blocker)
-    return blocker
+    return svc.create_blocker(db, payload)
 
 
 @router.get("/{blocker_id}", response_model=BlockerRead)
 def get_blocker(blocker_id: int, db: Session = Depends(get_db)):
-    blocker = db.get(Blocker, blocker_id)
+    blocker = svc.get_blocker(db, blocker_id)
     if blocker is None:
         raise HTTPException(status_code=404, detail="Blocker not found")
     return blocker
@@ -46,32 +34,23 @@ def get_blocker(blocker_id: int, db: Session = Depends(get_db)):
 def update_blocker(
     blocker_id: int, payload: BlockerUpdate, db: Session = Depends(get_db)
 ):
-    blocker = db.get(Blocker, blocker_id)
+    blocker = svc.get_blocker(db, blocker_id)
     if blocker is None:
         raise HTTPException(status_code=404, detail="Blocker not found")
-    for key, value in payload.model_dump(exclude_unset=True).items():
-        setattr(blocker, key, value)
-    db.commit()
-    db.refresh(blocker)
-    return blocker
+    return svc.update_blocker(db, blocker, payload)
 
 
 @router.post("/{blocker_id}/resolve", response_model=BlockerRead)
 def resolve_blocker(blocker_id: int, db: Session = Depends(get_db)):
-    blocker = db.get(Blocker, blocker_id)
+    blocker = svc.get_blocker(db, blocker_id)
     if blocker is None:
         raise HTTPException(status_code=404, detail="Blocker not found")
-    blocker.status = "resolved"
-    blocker.resolved_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(blocker)
-    return blocker
+    return svc.resolve_blocker(db, blocker)
 
 
 @router.delete("/{blocker_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_blocker(blocker_id: int, db: Session = Depends(get_db)):
-    blocker = db.get(Blocker, blocker_id)
+    blocker = svc.get_blocker(db, blocker_id)
     if blocker is None:
         raise HTTPException(status_code=404, detail="Blocker not found")
-    db.delete(blocker)
-    db.commit()
+    svc.delete_blocker(db, blocker)
